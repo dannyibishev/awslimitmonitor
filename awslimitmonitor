@@ -1,0 +1,316 @@
+#!/usr/bin/env python
+"""Limit Monitoring Script for AWS
+Usage:
+  awslimitmonitor (all|ec2|rds|load_balancer|asg)
+
+Options:
+  -h --help        Show this screen.
+  --version -v     Show version.
+"""
+from __future__ import print_function
+from platform import system as system_name # Returns the system/OS name
+from os import system as system_call       # Execute a shell command
+from botocore.exceptions import ClientError
+from docopt import docopt
+import json
+import boto3
+
+class NetworkError(LookupError):
+    ''' When Raised, I't will print out the custom message'''
+
+class color:
+    # Colours used in errors function which help identify status' by colour.
+    RED = '\033[91m'
+    YELLOW = '\033[33m'
+    GREEN = '\033[32m'
+    BLUE = '\033[94m'
+    END = '\033[0m'
+    BOLD = '\033[0m'
+
+inst_set = set()
+
+def pp_json(json_thing, sort=True, indents=4):
+    '''function that works like print (Python 3), except it prints in a pretty json format | USED FOR DEBUGGING
+    Usage:
+        pp_json(response)
+        pp_json(something_to_print)   # You get the idea.
+    '''
+    if type(json_thing) is str:
+        print(json.dumps(json.loads(json_thing), sort_keys=sort, indent=indents))
+    else:
+        print(json.dumps(json_thing, sort_keys=sort, indent=indents, default=str))
+    return None
+
+def errors(new_input):
+    ''' Whatever is imported is converted to an integer and evaluated to return a STATUS response
+    Usage:
+        errors("something_here")
+    Returns: message   # Status e.g "--> STATUS = OKAY"
+    '''
+    true_int = int(new_input)
+
+    if true_int == 0:
+        message = color.BLUE + " --> THIS SERVICE IS NOT USED, NOTHING TO REPORT" + color.END
+    elif true_int <= 49:
+        message = color.GREEN + " --> STATUS = OKAY" + color.END
+    elif true_int >= 50 and true_int <= 74:
+        message = color.YELLOW + " --> STATUS = CAUTION, MAY REQUIRE LIMIT INCREASE SOON" + color.END
+    elif true_int >= 75:
+        message = color.RED + " --> STATUS = WARNING! APROACHING LIMIT, PLEASE INCREASE ASAP" + color.END
+    return message
+
+# Used for calculating Autoscaling Groups Limits & Launch Configs Limits.
+def describe_account_limits_asg():
+    client = boto3.client('autoscaling')
+    try:
+        print("\n Launch Config and ASG Limits \n" + color.YELLOW + "~" * 30 + color.END)
+        response = client.describe_account_limits()
+        limit_output = response.values()
+        # Launch Config Limits
+        new_output = format(float('%.0f' % limit_output[0]) / limit_output[1] * 100).split('.')[0]
+        sendinput = format(new_output[:2])
+        print ("{0}% Used for Launch Configs, Current Launch Config: {1}, Max Limit: {2} {3}".format(sendinput, limit_output[0], limit_output[1], errors(sendinput)))
+        # AutoScalingGoups Limits
+        new_output = format(float('%.0f' % limit_output[2]) / limit_output[3] * 100).split('.')[0]
+        sendinput = format(new_output[:2])
+        print ("{0}% Used for ASG, Current ASG : {1}, Max Limit: {2} {3}".format(sendinput, limit_output[2], limit_output[3], errors(sendinput)))
+    except ClientError as e:
+        print(e)
+
+# This function used to calculate total ALB's
+def describe_load_balancers_alb(**kwargs):
+    client = boto3.client('elbv2')
+    try:
+        response = client.describe_load_balancers()
+        base_count_alb = 0
+        for alb_list in response['LoadBalancers']:
+            base_count_alb += 1
+
+        return base_count_alb
+
+    except ClientError as e:
+        print(e)
+
+# This function is used to calculate total ELB's
+def describe_load_balancers_elb(**kwargs):
+    client = boto3.client('elb')
+    try:
+        response = client.describe_load_balancers()
+
+        base_count_elb = 0
+        for alb_list in response['LoadBalancerDescriptions']:
+            base_count_elb += 1
+
+        return base_count_elb
+        print('Total ELBs: ' + str(base_count))
+
+    except ClientError as e:
+        print(e)
+
+# Uses the calculations from the describe_loab_balancer functions, which in turn is calculated against the max to get the percentage.
+def describe_account_limits_alb(**kwargs):
+    client = boto3.client('elbv2')
+    try:
+        print("\n ALB and ELB Limits \n" + color.YELLOW + "~" * 20 + color.END)
+        response = client.describe_account_limits()
+        limit_output = (response.values())
+        lb_max = int(limit_output[1][0]['Max'])
+        alb_output = str(float('%.0f' % describe_load_balancers_alb()) / lb_max * 100).split('.')[0]
+        elb_output = str(float('%.0f' % describe_load_balancers_elb()) / lb_max * 100).split('.')[0]
+        sendinput = str(int(alb_output[:2]))
+        print(sendinput + "% Used for ALBs, Current ALB count: " + str(describe_load_balancers_alb()) + "  Max ALB: " + str(lb_max) + errors(sendinput))
+        sendinput = str(int(elb_output[:2]))
+        print(sendinput + "% Used for ELBs, Current ELB count: " + str(describe_load_balancers_elb()) + "  Max ELB: " + str(lb_max) + errors(sendinput))
+
+    except ClientError as e:
+        print(e)
+
+##########################
+##### SPOT INSTANCES #####
+##########################
+
+def describe_spot_instance_requests(**kwargs):
+    client = boto3.client('ec2')
+    try:
+        print("\n Spot Instance Requests \n" + color.YELLOW + "~" * 24 + color.END)
+        response = client.describe_spot_instance_requests(
+            Filters=[
+                {
+                    'Name': 'state',
+                    'Values': [
+                        'active','open'
+                    ]
+                },
+            ],
+        )
+        new_count = 0
+
+        types_list= []
+        for request in response['SpotInstanceRequests']:
+            instance_types = request['LaunchSpecification']['InstanceType']
+
+            #Creates a list of all the types.
+            types_list.append(str(request['LaunchSpecification']['InstanceType']))
+
+            #Sets indexes to choose from.
+            inst_set.add(instance_types)
+            index_list = list(inst_set)
+        try:
+            for i in index_list:
+                print("Spot Instance Type: {0}, Currently Active or Open: {1}".format(i,types_list.count(i)))
+            total_count = len(types_list)
+            print("Total Active Spot instances in this Region: {0}".format(total_count))
+        except UnboundLocalError as e:
+            print("Total Active Spot instances in this Region: {0} {1}".format("0",errors("0")))
+
+    except ClientError as e:
+        print("Nope")
+
+######################
+##### RDS LIMITS #####
+######################
+
+def describe_account_rds():
+    client = boto3.client('rds')
+    try:
+        response = client.describe_account_attributes()
+        print("\n ALL RDS Limits \n" + color.YELLOW + "~" * 16 + color.END)
+        response = response['AccountQuotas']
+        for quota in response:
+            calculations = format(float('%.0f' % quota['Used']) / quota['Max'] * 100).split('.')[0]
+            sendinput = format(calculations[:2])
+            print("{4}% Used from the RDS Limit: {0}, Used: {1}, Max: {2} {3}".format(quota['AccountQuotaName'], quota['Used'], quota['Max'], errors(sendinput), sendinput))
+
+    except ClientError as e:
+        print(e)
+
+##########################
+##### ON-DEMAND INST #####
+##########################
+
+def describe_default_max_inst(**kwargs):
+    client = boto3.client('ec2')
+    try:
+        response = client.describe_account_attributes(
+            AttributeNames=[
+                'max-instances',
+                ],
+        )
+
+        new_response = response['AccountAttributes'][0]['AttributeValues'][0]['AttributeValue']
+        return new_response
+
+    except ClientError as e:
+        print(e)
+
+# Calculates the current used On Demand Instance Types.
+def ec2_describe_instances(**kwargs):
+    client = boto3.client('ec2')
+    try:
+        print("\n On Demand Instances \n" +color.YELLOW + "~" * 21 + color.END)
+        response = client.describe_instances(
+            Filters=[
+                {
+                    'Name': 'instance-state-name',
+                    'Values': [
+                        'running','stopped',
+                    ],
+                },
+            ],
+        )
+        new_count = 0
+
+        types_list= []
+        for reservation in response['Reservations']:
+            for instance in reservation['Instances']:
+                instancetypes = instance['InstanceType']
+
+                types_list.append(str(instance['InstanceType']))
+
+            inst_set.add(instance['InstanceType'])
+            index_list = list(inst_set)
+
+        for i in index_list:
+            print("On Demand Instance Type: {0}, Currently Active: {1}".format(i,types_list.count(i)))
+        total_count = len(types_list)
+
+        # Calculates and comapres the regional limit
+        inputted_var = describe_default_max_inst()
+        def_max = int(inputted_var)
+        region_output = format(float('%.0f' % total_count) / def_max * 100).split('.')[0]
+        sendinput = format(int(region_output[:2]))
+
+        print('\n{0}% Used by "On Demand" instances in this Region, Current On Demand Instance Total: {1}, Max On Demand Instances: {2} {3}'.format(sendinput,total_count,def_max,errors(sendinput)))
+
+    except ClientError as e:
+        print(e)
+
+def ebs_volumes(**kwargs):
+    client = boto3.client('ec2')
+    try:
+      response = client.describe_volumes()
+
+    except ClientError as e:
+        print(e)
+
+
+def ping(host):
+    """
+    Returns True if host (str) responds to a ping request.
+    Remember that some hosts may not respond to a ping request even if the host name is valid.
+    """
+
+    # Ping parameters as function of OS
+    try:
+        parameters = "-n 1" if system_name().lower()=="windows" else "-c 1"
+        output = " > nul 2>&1" if system_name().lower()=="windows" else " > /dev/null 2>&1 &"
+        response = system_call("ping " + parameters + " " + host + output)
+        if response == 0:
+            print('Connected to the Internet!')
+        else:
+            # raise('No Connection to the Internet, Troubleshoot your connection!')
+            raise NetworkError("No Connection to the Internet, Troubleshoot your connection!")
+    except NetworkError as e:
+        print(e)
+
+def action(arguments):
+
+    internettest=True
+
+    if internettest == True:
+        ping("aws.amazon.com")
+
+
+    lists = {'load_balancer_funct':[describe_load_balancers_alb,describe_load_balancers_elb,describe_account_limits_alb],'asg_funct':[describe_account_limits_asg],'ec2_funct':[describe_spot_instance_requests,describe_default_max_inst,ec2_describe_instances],'rds_funct':[describe_account_rds]}
+    if arguments['all']:
+        print('-' * 50 + '\n' + ' ' * 14 + 'Retrieving All Limits!\n' + '-' * 50)
+        for functions in lists.values():
+            for limits in functions:
+                limits()
+
+    elif arguments['ec2']:
+        print('-' * 50 + '\n' + ' ' * 11 + 'Retrieving EC2 Limits Only!\n' + '-' * 50)
+        for limits in lists.values()[0]:
+            limits()
+
+    elif arguments['rds']:
+        print('-' * 50 + '\n' + ' ' * 11 + 'Retrieving RDS Limits Only!\n' + '-' * 50)
+        for limits in lists.values()[2]:
+            limits()
+
+    elif arguments['load_balancer']:
+        print('-' * 50 + '\n' + ' ' * 6 + 'Retrieving Load Balancer Limits Only!\n' + '-' * 50)
+        describe_load_balancers_alb()
+        describe_load_balancers_elb()
+        describe_account_limits_alb()
+    elif arguments['asg']:
+        print('-' * 50 + '\n' + ' ' * 11 + 'Retrieving ASG Limits Only!\n' + '-' * 50)
+        for limits in lists.values()[1]:
+            limits()
+
+def getlicence():
+    print('This Needs finishing off')
+
+if __name__ == '__main__':
+    arguments = docopt(__doc__, version='LimitMonitor v0.1')
+    action = action(arguments)
