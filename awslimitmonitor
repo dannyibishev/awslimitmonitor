@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Limit Monitoring Script for AWS
 Usage:
-  awslimitmonitor (all|ec2|rds|load_balancer|asg)
+  awslimitmonitor  all|ec2|rds|load_balancer|asg
 
 Options:
   -h --help        Show this screen.
@@ -23,9 +23,8 @@ class color:
     RED = '\033[91m'
     YELLOW = '\033[33m'
     GREEN = '\033[32m'
-    BLUE = '\033[94m'
+    BLUE = '\033[34m'
     END = '\033[0m'
-    BOLD = '\033[0m'
 
 inst_set = set()
 
@@ -257,7 +256,6 @@ def ebs_volumes(**kwargs):
 def ping(host):
     """
     Returns True if host (str) responds to a ping request.
-    Remember that some hosts may not respond to a ping request even if the host name is valid.
     """
 
     # Ping parameters as function of OS
