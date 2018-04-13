@@ -2,7 +2,7 @@ import json
 
 class Color:
     """
-    Colours used in errors function which help identify status' by colour.
+    Colours used in the status function which help identify status' by colour.
     Options:
 
     RED, YELLOW, GREEN, BLUE, END """
@@ -14,7 +14,10 @@ class Color:
     END = '\033[0m'
 
 def pp_json(json_thing, sort=True, indents=4):
-    """ function that works like print (Python 3), except it prints in a pretty json format | USED FOR DEBUGGING
+    """
+    A function that works like print (Python 3), except it prints in a pretty
+    json format. (MOSTLY USED FOR DEBUGGING)
+
     Usage:
         pp_json(response)
         pp_json(something_to_print)   # You get the idea.
@@ -26,21 +29,31 @@ def pp_json(json_thing, sort=True, indents=4):
     return None
 
 def status(new_input):
-    """ Whatever is imported is converted to an integer and evaluated to return a STATUS response
+    """
+    Whatever is imported is converted to an integer and evaluated to return a
+    STATUS response.
+
     Usage:
-        status("something_here")
-    Returns: message   # Status e.g "--> STATUS = OKAY"
+        status('something_here')
+    Returns: message   # Status e.g '--> STATUS = OKAY'
     """
     true_int = int(new_input)
 
     if true_int == 0:
-        message = Color.BLUE + " --> THIS SERVICE IS NOT USED, NOTHING TO REPORT" + Color.END
+        message = Color.BLUE + ' --> THIS SERVICE IS NOT USED, NOTHING TO REPORT' \
+         + Color.END
+
     elif true_int <= 49:
-        message = Color.GREEN + " --> STATUS = OKAY" + Color.END
+        message = Color.GREEN + ' --> STATUS = OKAY' + Color.END
+
     elif true_int >= 50 and true_int <= 74:
-        message = Color.YELLOW + " --> STATUS = CAUTION, MAY REQUIRE LIMIT INCREASE SOON" + Color.END
+        message = Color.YELLOW + ' --> STATUS = CAUTION, MAY REQUIRE LIMIT ' \
+        'INCREASE SOON' + Color.END
+
     elif true_int >= 75:
-        message = Color.RED + " --> STATUS = WARNING! APROACHING LIMIT, PLEASE INCREASE ASAP" + Color.END
+        message = Color.RED + ' --> STATUS = WARNING! APROACHING LIMIT, ' \
+        'PLEASE INCREASE ASAP' + Color.END
+
     return message
 
 def percentage(part, whole):

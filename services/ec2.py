@@ -5,12 +5,17 @@ from networking.connections import RequestExpired
 
 class Ec2Manager:
     """
-    Houses all of the methods and attributes which are required to calculate and return the limits for
-    On Demand, Spot Instances Requests and Default EC2 limits per account.
+    Houses all of the methods and attributes which are required to
+    calculate and return the limits for On Demand, Spot Instance
+    Requests and Default EC2 limits per account.
     """
     def __init__(self, service) -> str:
-        """ this class will need to be initialised with the correct service before using any other method/function within the class."""
+        """
+        this class will need to be initialised with the correct service
+        before using any other method/function within the class.
+        """
         self.service = service
+
 
     @staticmethod
     def describe_max_inst() -> str:
@@ -20,18 +25,24 @@ class Ec2Manager:
             response = client.describe_account_attributes(
                 AttributeNames=['max-instances']
             )
-            new_response = response['AccountAttributes'][0]['AttributeValues'][0]['AttributeValue']
+
+            new_response = response['AccountAttributes'] \
+            [0]['AttributeValues'][0]['AttributeValue']
+
             return new_response
 
         except ClientError as e:
             RequestExpired(e)
             # print(e)
 
+
     @staticmethod
     def spot_requests_describer() -> set:
         """
-        Dynamically retrieves all spot requests in a started | stopped state. (Will need to add the cancelled state in the future as it counts towards the limit)
-        returns the following:
+        Dynamically retrieves all spot requests in a started | stopped
+        state. (Will need to add the cancelled state in the future as
+        it counts towards the limit)
+        Returns the following:
 
         - index_list
         - types_list
@@ -65,11 +76,13 @@ class Ec2Manager:
         except ClientError as e:
             RequestExpired(e)
 
+
     @staticmethod
     def ec2describer():
         """
-        Dynamically retrieves all instances in a started | stopped state.
-        An index_list and types_list is returned for data manipulation outside the function.
+        Dynamically retrieves all instances in a started | stopped
+        state. An index_list and types_list is returned for data
+        manipulation outside the function.
         """
         client = boto3.client('ec2')
         inst_set = set()
@@ -79,7 +92,8 @@ class Ec2Manager:
             response = client.describe_instances(
                 Filters=[
                     {
-                        'Name': 'instance-state-name', 'Values': ['running', 'stopped']
+                        'Name': 'instance-state-name', 'Values': [
+                            'running', 'stopped']
                     }
                 ]
             )
@@ -97,9 +111,11 @@ class Ec2Manager:
         except ClientError as e:
             RequestExpired(e)
 
+
     def limitExecutor(self):
         """
-        Triggers the appropiate functions depending on what service is used.
+        Triggers the appropiate functions depending on what service is
+        used.
 
         Services supported:
         - OnDemand
@@ -107,30 +123,64 @@ class Ec2Manager:
         - ReservedInstances - Future Implementation. Not Yet Set Up!
         """
         if self.service == 'OnDemand':
-            print('{START}\r\n{text:^80}\r\n{END}'.format(text='~~ On Demand Instances ~~', START=Color.YELLOW, END=Color.END))
+            print('{START}\r\n{text:^80}\r\n{END}'.format(
+                text='~~ On Demand Instances ~~',
+                START=Color.YELLOW,
+                END=Color.END
+                ))
+
             result = self.ec2describer()
 
             if result != None:
                 index_list, types_list = [result[0], result[1]]
 
                 for type_name in index_list:
-                    print("* On Demand Instance Type: {0}, Currently Active: {1}".format(type_name, types_list.count(type_name)))
+                    print('* On Demand Instance Type: {0}, Currently Active: '
+                          '{1}'.format(
+                              type_name,
+                              types_list.count(type_name)
+                              )
+                          )
 
                 def_max = self.describe_max_inst()
                 calc_percentage = percentage(len(types_list), def_max)
-                print('\r\n* {0}% Used by "On Demand" instances in this Region, Current On Demand Instance Total: {1}, Max On Demand Instances: {2} {3}'.format(calc_percentage, len(types_list), def_max, status(calc_percentage)))
+
+                print('\r\n* {0}% Used by "On Demand" instances in this '
+                      'Region,  Current On Demand Instance Total: {1},  '
+                      'Max On Demand Instances: {2} {3}'.format(
+                          calc_percentage,
+                          len(types_list),
+                          def_max,
+                          status(calc_percentage),
+                          )
+                      )
 
         elif self.service == 'SpotRequests':
-            print('{START}\r\n{text:^80}\r\n{END}'.format(text='~~ Spot Instance Requests ~~', START=Color.YELLOW, END=Color.END))
+            print('{START}\r\n{TEXT:^80}\r\n{END}'.format(
+                TEXT='~~ Spot Instance Requests ~~',
+                START=Color.YELLOW,
+                END=Color.END
+                ))
+
             result = self.spot_requests_describer()
 
             if result != None:
-                index_list, types_list, inst_set = [result[0], result[1], result[2]]
-
+                index_list, types_list, inst_set = [result[0],
+                                                    result[1],
+                                                    result[2],
+                                                    ]
                 try:
                     for i in index_list:
-                        print("* Spot Instance Type: {0}, Currently In an Active | Open | Closed State: {1}".format(i, types_list.count(i)))
+                        print('* Spot Instance Type: {0}, Currently In an '
+                              'Active | Open | Closed State: {1}'.format(
+                                  i,
+                                  types_list.count(i)
+                                  )
+                              )
+
                     total_count = len(types_list)
-                    print("\r\n* Total Active Spot instances in this Region: {0}".format(total_count))
+                    print('\r\n* Total Active Spot instances in this Region: '
+                          '{0}'.format(total_count))
                 except UnboundLocalError as e:
-                    print("\r\n* Total Active Spot instances in this Region: {0} {1}".format("0", status("0")))
+                    print('\r\n* Total Active Spot instances in this Region: '
+                          '{0} {1}'.format('0', status('0')))

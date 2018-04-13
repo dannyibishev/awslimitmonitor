@@ -18,27 +18,46 @@ from services.ec2 import Ec2Manager
 from services.asg import ASGManager
 
 class Actions():
-
     def service_selector(arguments):
-        typesList = {'lb':['LoadBalancer'] ,'asg':['AutoScalingGoups'] ,'ec2':['SpotRequests', 'OnDemand'] ,'rds':['RelationalDatabasesService']}
+        typesList = {'lb':['LoadBalancer'],
+                     'asg':['AutoScalingGoups'],
+                     'ec2':['SpotRequests', 'OnDemand'],
+                     'rds':['RelationalDatabasesService']}
 
         if arguments['all']:
-            print('{border}\r\n{text:^80}\r\n{border}'.format(text='Retrieving All Limits!', border=('=' * 80)))
+            print('{border}\r\n{text:^80}\r\n{border}'.format(
+                text='Retrieving All Limits!',
+                border=('=' * 80)
+                ))
 
         if arguments['ec2']:
-            print('{border}\r\n{text:^80}\r\n{border}'.format(text='Retrieving EC2 Limits Only!', border=('=' * 80)))
+            print('{border}\r\n{text:^80}\r\n{border}'.format(
+                text='Retrieving EC2 Limits Only!',
+                border=('=' * 80)
+                ))
+
             for service in typesList['ec2']:
                 initiator = Ec2Manager(service)
                 initiator.limitExecutor()
 
         elif arguments['rds']:
-            print('{border}\r\n{text:^80}\r\n{border}'.format(text='Retrieving RDS Limits Only!', border=('=' * 80)))
+            print('{border}\r\n{text:^80}\r\n{border}'.format(
+                text='Retrieving RDS Limits Only!',
+                border=('=' * 80)
+                ))
 
         elif arguments['lb']:
-            print('{border}\r\n{text:^80}\r\n{border}'.format(text='Retrieving Load Balancer Limits Only!', border=('=' * 80)))
+            print('{border}\r\n{text:^80}\r\n{border}'.format(
+                text='Retrieving Load Balancer Limits Only!',
+                border=('=' * 80)
+                ))
 
         elif arguments['asg']:
-            print('{border}\r\n{text:^80}\r\n{border}'.format(text='Retrieving ASG Limits Only!', border=('=' * 80)))
+            print('{border}\r\n{text:^80}\r\n{border}'.format(
+                text='Retrieving ASG Limits Only!',
+                border=('=' * 80)
+                ))
+
             for service in typesList['asg']:
                 initiator = ASGManager(service)
                 initiator.limitExecutor()
