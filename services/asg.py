@@ -8,7 +8,7 @@ class ASGManager:
     Houses all of the methods and attributes which are required to calculate and
     return the limits for ASG and Launch Configurations.
     """
-    def __init__(self, service) -> str:
+    def __init__(self, service) -> None:
         """
         This class will need to be initialised with the correct service
         before using any other method/function within the class.
