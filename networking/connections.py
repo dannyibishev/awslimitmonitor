@@ -1,4 +1,6 @@
 import sys
+from platform import system as system_name # Returns the system/OS name
+# from os import system as system_call       # Execute a shell command
 
 class RequestExpired:
     def __init__(self, ClientErrorException):

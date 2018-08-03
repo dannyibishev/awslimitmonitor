@@ -1,7 +1,11 @@
-import boto3
+"""
+The EC2 Module, awslimitmonitor imports this to calculate
+all EC2 limits.
+"""
 from botocore.exceptions import ClientError
 from functionality.tools import Color, pp_json, status, percentage
 from networking.connections import RequestExpired
+
 
 class Ec2Manager:
     """
@@ -9,18 +13,18 @@ class Ec2Manager:
     calculate and return the limits for On Demand, Spot Instance
     Requests and Default EC2 limits per account.
     """
-    def __init__(self, service) -> str:
+    def __init__(self, service, client) -> str:
         """
         this class will need to be initialised with the correct service
         before using any other method/function within the class.
         """
         self.service = service
+        self.client = client
 
 
     @staticmethod
-    def describe_max_inst() -> str:
+    def describe_max_inst(client) -> str:
         """ Returns the account max instances limit. (default is 1000) """
-        client = boto3.client('ec2')
         try:
             response = client.describe_account_attributes(
                 AttributeNames=['max-instances']
@@ -30,14 +34,12 @@ class Ec2Manager:
             [0]['AttributeValues'][0]['AttributeValue']
 
             return new_response
-
-        except ClientError as e:
-            RequestExpired(e)
-            # print(e)
+        except ClientError as error:
+            RequestExpired(error)
 
 
     @staticmethod
-    def spot_requests_describer() -> set:
+    def spotRequestsDescriber(client) -> set:
         """
         Dynamically retrieves all spot requests in a started | stopped
         state. (Will need to add the cancelled state in the future as
@@ -48,8 +50,7 @@ class Ec2Manager:
         - types_list
         - inst_set
         """
-        client = boto3.client('ec2')
-        types_list= []
+        types_list = []
         inst_set = set()
         try:
             response = client.describe_spot_instance_requests(
@@ -64,29 +65,26 @@ class Ec2Manager:
             for request in response['SpotInstanceRequests']:
                 instance_types = request['LaunchSpecification']['InstanceType']
 
-                #Creates a list of all the types.
+                # Creates a list of all the types.
                 types_list.append(request['LaunchSpecification']['InstanceType'])
 
-                #Sets indexes to choose from.
+                # Sets indexes to choose from.
                 inst_set.add(instance_types)
                 index_list = list(inst_set)
 
-            return (index_list,types_list,inst_set)
-
-        except ClientError as e:
-            RequestExpired(e)
-
+            return (index_list, types_list, inst_set)
+        except ClientError as error:
+            RequestExpired(error)
 
     @staticmethod
-    def ec2describer():
+    def ec2Describer(client):
         """
         Dynamically retrieves all instances in a started | stopped
         state. An index_list and types_list is returned for data
         manipulation outside the function.
         """
-        client = boto3.client('ec2')
         inst_set = set()
-        types_list= []
+        types_list = []
 
         try:
             response = client.describe_instances(
@@ -100,19 +98,34 @@ class Ec2Manager:
 
             for reservation in response['Reservations']:
                 for instance in reservation['Instances']:
-                    instancetypes = instance['InstanceType']
                     types_list.append(str(instance['InstanceType']))
 
                 inst_set.add(instance['InstanceType'])
                 index_list = list(inst_set)
 
             return(index_list, types_list)
+        except ClientError as error:
+            RequestExpired(error)
 
-        except ClientError as e:
-            RequestExpired(e)
+
+    @staticmethod
+    def volume_describer(client):
+        volume_types = ['gp2', 'io1', 'st1', 'sc1', 'standard']
+        try:
+            response = client.describe_volumes(
+                Filters=[
+                    {
+                        'Name': 'volume-type', 'Values': ['gp2']
+                    },
+                ],
+            )
+        except ClientError as error:
+            print(error)
+
+        pp_json(response)
 
 
-    def limitExecutor(self):
+    def limit_executor(self):
         """
         Triggers the appropiate functions depending on what service is
         used.
@@ -129,31 +142,31 @@ class Ec2Manager:
                 END=Color.END
                 ))
 
-            result = self.ec2describer()
+            result = self.ec2Describer(self.client)
 
             if result != None:
                 index_list, types_list = [result[0], result[1]]
 
                 for type_name in index_list:
-                    print('* On Demand Instance Type: {0}, Currently Active: '
-                          '{1}'.format(
-                              type_name,
-                              types_list.count(type_name)
+                    print('* On Demand Instance Type: {TYPE}, Currently '
+                          'In Use: {ACTIVE}'.format(
+                              TYPE=type_name,
+                              ACTIVE=types_list.count(type_name)
                               )
-                          )
-
-                def_max = self.describe_max_inst()
+                         )
+                def_max = self.describe_max_inst(self.client)
                 calc_percentage = percentage(len(types_list), def_max)
 
-                print('\r\n* {0}% Used by "On Demand" instances in this '
-                      'Region,  Current On Demand Instance Total: {1},  '
-                      'Max On Demand Instances: {2} {3}'.format(
-                          calc_percentage,
-                          len(types_list),
-                          def_max,
-                          status(calc_percentage),
+                print('\r\n* {PERCENTAGE}% Used by "On Demand" instances'
+                      ' in this Region,  Current On Demand Instance Total: '
+                      ' {USED},  Max On Demand Instances: {MAX} '
+                      '{STATUS}'.format(
+                          PERCENTAGE=calc_percentage,
+                          USED=len(types_list),
+                          MAX=def_max,
+                          STATUS=status(calc_percentage),
                           )
-                      )
+                     )
 
         elif self.service == 'SpotRequests':
             print('{START}\r\n{TEXT:^80}\r\n{END}'.format(
@@ -162,13 +175,15 @@ class Ec2Manager:
                 END=Color.END
                 ))
 
-            result = self.spot_requests_describer()
+            result = self.spotRequestsDescriber(self.client)
 
             if result != None:
-                index_list, types_list, inst_set = [result[0],
-                                                    result[1],
-                                                    result[2],
-                                                    ]
+                index_list, types_list, inst_set = [
+                    result[0],
+                    result[1],
+                    result[2],
+                    ]
+
                 try:
                     for i in index_list:
                         print('* Spot Instance Type: {0}, Currently In an '
@@ -176,11 +191,19 @@ class Ec2Manager:
                                   i,
                                   types_list.count(i)
                                   )
-                              )
+                             )
 
                     total_count = len(types_list)
                     print('\r\n* Total Active Spot instances in this Region: '
                           '{0}'.format(total_count))
-                except UnboundLocalError as e:
+                except UnboundLocalError:
                     print('\r\n* Total Active Spot instances in this Region: '
                           '{0} {1}'.format('0', status('0')))
+
+        elif self.service == 'EBS':
+            print('{START}\r\n{TEXT:^80}\r\n{END}'.format(
+                TEXT='~~ EBS Volumes ~~',
+                START=Color.YELLOW,
+                END=Color.END
+                ))
+            self.volume_describer(self.client)
